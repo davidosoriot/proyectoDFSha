@@ -42,6 +42,24 @@ class Settings:
     # Limpieza de PENDING expirados.
     pending_cleanup_interval_seconds: int = int(os.getenv("DFSHA_PENDING_CLEANUP_INTERVAL", "300"))
 
+    # Re-replicacion (restablecer RF cuando una replica se pierde).
+    rereplication_interval_seconds: int = int(os.getenv("DFSHA_REREP_INTERVAL", "30"))
+
+    # Federacion: clave compartida entre peers (ControlNodes de distintos dominios).
+    federation_api_key: str = os.getenv("DFSHA_FEDERATION_KEY", "dev-federation-key")
+    federation_propagation_interval_seconds: int = int(
+        os.getenv("DFSHA_FEDERATION_INTERVAL", "10")
+    )
+
+    # Replicacion del ControlNode (leader-follower). LEADER acepta escrituras,
+    # FOLLOWER solo sirve lecturas y sincroniza desde el leader.
+    role: str = os.getenv("DFSHA_ROLE", "LEADER").upper()  # LEADER | FOLLOWER
+    leader_url: str = os.getenv("DFSHA_LEADER_URL", "http://localhost:8000")
+    replication_api_key: str = os.getenv("DFSHA_REPLICATION_KEY", "dev-replication-key")
+    replication_poll_interval_seconds: int = int(
+        os.getenv("DFSHA_REPLICATION_POLL", "5")
+    )
+
 
 settings = Settings()
 

@@ -61,6 +61,38 @@ class User(Base):
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+# --- ACL (permisos granulares por prefijo) ---
+
+
+class Permission:
+    READ = "READ"
+    WRITE = "WRITE"
+    DELETE = "DELETE"
+
+
+class ACL(Base):
+    __tablename__ = "acls"
+
+    acl_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.user_id"), nullable=False
+    )
+    grantee_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.user_id"), nullable=False
+    )
+    path_prefix: Mapped[str] = mapped_column(String(1024), nullable=False)
+    permissions: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id", "grantee_id", "path_prefix", name="uq_acl_grant"
+        ),
+        Index("ix_acl_grantee", "grantee_id", "domain_id"),
+    )
+
+
 # --- Directorios (namespace virtual) ---
 
 
@@ -203,6 +235,20 @@ class DataNode(Base):
     )
 
 
+# --- Federacion: dominios peer ---
+
+
+class PeerDomain(Base):
+    __tablename__ = "peer_domains"
+
+    domain_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    endpoint: Mapped[str] = mapped_column(String(256), nullable=False)
+    api_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    registered_at: Mapped[float] = mapped_column(Float, nullable=False)
+    last_seen_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 # --- Log de eventos (costura Hito 3) ---
 
 
@@ -239,3 +285,7 @@ class EventType:
     NAMESPACE_MKDIR = "NAMESPACE_MKDIR"
     NAMESPACE_RMDIR = "NAMESPACE_RMDIR"
     USER_REGISTERED = "USER_REGISTERED"
+    ACL_GRANTED = "ACL_GRANTED"
+    ACL_REVOKED = "ACL_REVOKED"
+    PEER_REGISTERED = "PEER_REGISTERED"
+    PEER_REMOVED = "PEER_REMOVED"

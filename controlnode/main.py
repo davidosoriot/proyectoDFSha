@@ -12,8 +12,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from .api import auth, datanodes, namespace, objects
+from .api import acls, admin, auth, datanodes, federation, namespace, objects, replication
+from .core.federation_svc import FederationPropagatorTask
 from .core.health_monitor import HealthMonitorTask, PendingCleanupTask
+from .core.replication import FollowerSyncTask
+from .core.rereplication import RereplicationTask
 from .db.connection import dispose_engine, get_engine
 from .db.models import Base
 
@@ -24,6 +27,9 @@ logging.basicConfig(
 
 health_task = HealthMonitorTask()
 cleanup_task = PendingCleanupTask()
+rerep_task = RereplicationTask()
+federation_task = FederationPropagatorTask()
+follower_task = FollowerSyncTask()
 
 
 @asynccontextmanager
@@ -35,11 +41,17 @@ async def lifespan(app: FastAPI):
 
     health_task.start()
     cleanup_task.start()
+    rerep_task.start()
+    federation_task.start()
+    follower_task.start()
     try:
         yield
     finally:
         await health_task.stop()
         await cleanup_task.stop()
+        await rerep_task.stop()
+        await federation_task.stop()
+        await follower_task.stop()
         await dispose_engine()
 
 
@@ -58,6 +70,11 @@ def create_app() -> FastAPI:
     app.include_router(namespace.router)
     app.include_router(objects.router)
     app.include_router(datanodes.router)
+    app.include_router(admin.router)
+    app.include_router(acls.router)
+    app.include_router(federation.admin_router)
+    app.include_router(federation.peer_router)
+    app.include_router(replication.router)
     return app
 
 

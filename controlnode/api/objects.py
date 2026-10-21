@@ -11,11 +11,14 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from ..config import settings
+from ..core.acl_svc import ACLService
 from ..core.auth_svc import CurrentUser
 from ..core.catalog import BlockInput, CatalogService, ObjectInitInput
 from ..core.federation import FederationResolver
+from ..core.federation_svc import FederationClient
 from ..core.placement_svc import PlacementService
-from ..db.models import ObjectStatus, Replica, ReplicaStatus
+from ..db.models import Permission, ObjectStatus, Replica, ReplicaStatus
 from ..db.repository import Repository
 from ..errors import (
     ConflictError,
@@ -174,16 +177,73 @@ async def commit_object(
 @router.get("", response_model=GetObjectResponse)
 async def get_object_by_key(
     key: str = Query(...),
+    owner: str | None = Query(default=None, description="username del dueño si no es el actor"),
+    domain: str | None = Query(default=None, description="dominio remoto; si no se da, local"),
     user: CurrentUser = Depends(get_current_user),
     repo: Repository = Depends(get_repository),
 ) -> GetObjectResponse:
+    # Lookup cross-domain: si se pide un dominio distinto al local, hacemos
+    # proxy via FederationClient y devolvemos las ubicaciones del peer.
+    if domain is not None and domain != settings.domain_id:
+        if owner is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="owner es requerido para lecturas cross-domain",
+            )
+        try:
+            remote = await FederationClient(repo).resolve_remote(domain, key, owner)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            )
+        return GetObjectResponse(
+            object_id=remote["object_id"],
+            object_key=remote["object_key"],
+            version=remote["version"],
+            total_size=remote["total_size"],
+            block_size=remote["block_size"],
+            global_checksum=remote["global_checksum"],
+            blocks=[
+                BlockReadInfo(
+                    block_id=b["block_id"],
+                    index=b["index"],
+                    size=b["size"],
+                    checksum=b["checksum"],
+                    replicas=[DataNodeLocation(**r) for r in b["replicas"]],
+                )
+                for b in remote["blocks"]
+            ],
+        )
+
     # Costura 3: pasamos por FederationResolver antes de tocar el catalogo local.
     resolver = FederationResolver()
     resolution = await resolver.resolve(key, user.user_id)
-    # Hoy resolution.location siempre es 'local'; el bloque remote quedaria aca
-    # (redirect al ControlNode remoto). Se deja preparado para Hito 3.
 
-    obj = await repo.get_latest_committed(user.user_id, key, user.domain_id)
+    # Si viene owner=, lo resolvemos y verificamos ACL READ sobre el prefijo.
+    if owner is not None and owner != user.username:
+        target_user = await repo.get_user_by_username(owner)
+        if target_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"usuario {owner} no existe"
+            )
+        acl = ACLService(repo)
+        allowed = await acl.check(
+            actor_user_id=user.user_id,
+            resource_owner_id=target_user.user_id,
+            path=key,
+            permission=Permission.READ,
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="sin permiso READ sobre el prefijo",
+            )
+        obj = await repo.get_latest_committed(target_user.user_id, key, user.domain_id)
+    else:
+        obj = await repo.get_latest_committed(user.user_id, key, user.domain_id)
+
     if obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"objeto {key} no existe"

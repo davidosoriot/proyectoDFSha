@@ -29,6 +29,9 @@ env/
 Thumbs.db
 .DS_Store
 
+# Office temp lock files
+~$*
+
 # Coverage
 .coverage
 htmlcov/
