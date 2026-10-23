@@ -32,6 +32,12 @@ Thumbs.db
 # Office temp lock files
 ~$*
 
+# Variables de entorno con secretos (NO commitear).
+# El template commiteable es .env.example.
+.env
+.env.local
+.env.*.local
+
 # Coverage
 .coverage
 htmlcov/

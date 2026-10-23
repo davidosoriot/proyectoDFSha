@@ -1,0 +1,57 @@
+x-dn: &dn
+  build: .
+  restart: unless-stopped
+  depends_on:
+    controlnode:
+      condition: service_healthy
+  command: sh -c 'uvicorn datanode.main:app --host 0.0.0.0 --port $$DFSHA_DN_PORT'
+
+x-dn-env: &dn-env
+  DFSHA_DN_DOMAIN_ID: ${DOMAIN_ID}
+  DFSHA_DN_CONTROLNODE_URL: http://controlnode:8000
+  DFSHA_DN_CONTROLNODE_KEY: ${DATANODE_KEY}
+  DFSHA_DN_STORAGE: /data
+  DFSHA_DN_ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+services:
+  controlnode:
+    build: .
+    restart: unless-stopped
+    command: uvicorn controlnode.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DFSHA_DOMAIN_ID: ${DOMAIN_ID}
+      DFSHA_DB_URL: sqlite+aiosqlite:////data/controlnode.db
+      DFSHA_JWT_SECRET: ${JWT_SECRET}
+      DFSHA_DATANODE_API_KEY: ${DATANODE_KEY}
+      DFSHA_FEDERATION_KEY: ${FEDERATION_KEY}
+      DFSHA_REPLICATION_FACTOR: "3"
+      DFSHA_ROLE: LEADER
+    volumes: [cn-data:/data]
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 5s
+      retries: 10
+
+  dn1:
+    <<: *dn
+    environment: { <<: *dn-env, DFSHA_DN_NODE_ID: dn-1, DFSHA_DN_PORT: "9001", DFSHA_DN_PUBLIC_ADDRESS: "http://${PUBLIC_IP}:9001" }
+    volumes: [dn1:/data]
+    ports: ["9001:9001"]
+  dn2:
+    <<: *dn
+    environment: { <<: *dn-env, DFSHA_DN_NODE_ID: dn-2, DFSHA_DN_PORT: "9002", DFSHA_DN_PUBLIC_ADDRESS: "http://${PUBLIC_IP}:9002" }
+    volumes: [dn2:/data]
+    ports: ["9002:9002"]
+  dn3:
+    <<: *dn
+    environment: { <<: *dn-env, DFSHA_DN_NODE_ID: dn-3, DFSHA_DN_PORT: "9003", DFSHA_DN_PUBLIC_ADDRESS: "http://${PUBLIC_IP}:9003" }
+    volumes: [dn3:/data]
+    ports: ["9003:9003"]
+  dn4:
+    <<: *dn
+    environment: { <<: *dn-env, DFSHA_DN_NODE_ID: dn-4, DFSHA_DN_PORT: "9004", DFSHA_DN_PUBLIC_ADDRESS: "http://${PUBLIC_IP}:9004" }
+    volumes: [dn4:/data]
+    ports: ["9004:9004"]
+
+volumes: { cn-data: {}, dn1: {}, dn2: {}, dn3: {}, dn4: {} }
