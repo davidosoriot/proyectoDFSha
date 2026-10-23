@@ -85,7 +85,14 @@ def create_app() -> FastAPI:
         ),
         lifespan=lifespan,
     )
-    app.include_router(build_router(store, settings.node_id))
+    async def _notify_block_stored(block_id: str, checksum: str) -> None:
+        # Block report incremental: confirma la replica al ControlNode de
+        # inmediato para que el commit del cliente no espere al tick periodico.
+        await client.block_report(settings.node_id, [(block_id, checksum)])
+
+    app.include_router(
+        build_router(store, settings.node_id, on_block_stored=_notify_block_stored)
+    )
     return app
 
 
