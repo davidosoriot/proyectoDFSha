@@ -239,16 +239,36 @@ class DFShaClient:
         _raise_for_status(r)
         return r.json()["acls"]
 
-    async def get(self, object_key: str, owner: Optional[str] = None) -> bytes:
+    async def locate(
+        self,
+        object_key: str,
+        owner: Optional[str] = None,
+        domain: Optional[str] = None,
+    ) -> dict:
+        """Resuelve un objeto sin descargarlo: manifiesto + replicas por bloque.
+
+        Con `domain` distinto al local, el ControlNode hace proxy al peer
+        federado y devuelve las ubicaciones en los DataNodes de ese dominio.
+        """
         params = {"key": object_key}
         if owner:
             params["owner"] = owner
+        if domain:
+            params["domain"] = domain
         async with self._cn_client() as c:
             r = await c.get(
                 "/objects", params=params, headers=self._auth_headers()
             )
         _raise_for_status(r)
-        meta = r.json()
+        return r.json()
+
+    async def get(
+        self,
+        object_key: str,
+        owner: Optional[str] = None,
+        domain: Optional[str] = None,
+    ) -> bytes:
+        meta = await self.locate(object_key, owner=owner, domain=domain)
 
         pieces: list[bytes] = []
         for block in sorted(meta["blocks"], key=lambda b: b["index"]):

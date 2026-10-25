@@ -86,7 +86,11 @@ def build_router(
         except BlockNotFound:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="bloque inexistente")
         except BlockCorrupted as exc:
-            log.error("bloque %s corrupto: %s", block_id, exc)
+            # Cuarentena: se elimina la copia corrupta para que el block report
+            # no la vuelva a confirmar. El ControlNode la repone desde otra
+            # replica sana via re-replicacion.
+            log.error("bloque %s corrupto, se elimina la copia local: %s", block_id, exc)
+            store.delete(block_id)
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="bloque corrupto")
         return Response(content=data, media_type="application/octet-stream")
 

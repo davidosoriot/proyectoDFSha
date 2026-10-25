@@ -97,3 +97,22 @@ async def test_inventory(client):
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_corrupted_block_returns_410_and_quarantines(app, client, tmp_path):
+    """Un bloque corrupto responde 410 y se elimina la copia local, para que el
+    block report no la vuelva a confirmar ante el ControlNode."""
+    data = b"z" * 2048
+    bid = "blk_000000"
+    r = await client.put(f"/blocks/{bid}", content=data, params={"checksum": _digest(data)})
+    assert r.status_code == 201
+    path = tmp_path / "blocks" / bid
+    raw = bytearray(path.read_bytes())
+    raw[-1] ^= 0xFF
+    path.write_bytes(bytes(raw))
+
+    r = await client.get(f"/blocks/{bid}")
+    assert r.status_code == 410
+    assert not app.state.store.exists(bid)
+    assert all(e.block_id != bid for e in app.state.store.iter_inventory())

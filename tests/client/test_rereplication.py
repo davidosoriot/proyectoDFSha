@@ -143,3 +143,34 @@ async def test_rereplication_admin_endpoint(registered_env):
     body = r.json()
     assert "under_rf" in body
     assert "scheduled" in body
+
+
+@pytest.mark.asyncio
+async def test_rereplication_reuses_lost_replica_row(registered_env):
+    """Regresion: si el unico destino posible ya tuvo una replica LOST del
+    bloque (nodo que murio y volvio), la re-replicacion reutiliza esa fila en
+    lugar de violar UNIQUE(block_id, datanode_id)."""
+    client = _mk_client(registered_env)
+    content = b"0123456789" * 300
+    await client.mkdir("/d")
+    await client.put(content, "/d/y.bin", block_size=1024)
+
+    node_id = registered_env["nodes"][0][0]
+    factory = get_session_factory()
+    async with factory() as session:
+        catalog = CatalogService(Repository(session))
+        await catalog.mark_datanode_dead(node_id)  # replicas -> LOST
+        await catalog.receive_heartbeat(node_id, 1_000_000_000, 0.0)  # vuelve ALIVE
+
+    dn_transport = registered_env["dn_transport"]
+    async with factory() as session:
+        svc = RereplicationService(
+            Repository(session),
+            http_client_factory=lambda: AsyncClient(transport=dn_transport, timeout=10),
+        )
+        stats = await svc.tick()
+
+    assert stats["under_rf"] > 0
+    assert stats["failed"] == 0
+    assert stats["copied"] == stats["scheduled"] > 0
+    assert await client.get("/d/y.bin") == content

@@ -122,3 +122,21 @@ def test_used_bytes_grows_with_blocks(tmp_path):
     data = b"x" * 1024
     store.put(_digest(data), data)
     assert store.used_bytes() >= 1024 + CHECKSUM_SIZE
+
+
+def test_put_overwrites_corrupted_copy_with_intact_header(tmp_path):
+    """Regresion: una copia con el header intacto pero el contenido danado no
+    debe tratarse como 'ya existe'; el put la reescribe sana."""
+    store = BlockStore(str(tmp_path))
+    data = b"payload-" * 512
+    bid = "blk_000000"
+    store.put(bid, data)
+    path = tmp_path / bid
+    raw = bytearray(path.read_bytes())
+    raw[CHECKSUM_SIZE + 10] ^= 0xFF  # dana el cuerpo, no el header
+    path.write_bytes(bytes(raw))
+    with pytest.raises(BlockCorrupted):
+        store.get(bid)
+
+    store.put(bid, data)
+    assert store.get(bid) == data

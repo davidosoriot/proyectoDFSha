@@ -159,6 +159,29 @@ class RereplicationService:
     async def _assign_replica(self, block_id: str, node_id: str) -> Replica:
         now = time.time()
         existing_replicas = await self.repo.get_replicas_for_block(block_id)
+        # Si el destino ya tuvo una replica de este bloque (LOST por caida o
+        # corrupcion), se reutiliza esa fila: (block_id, datanode_id) es UNIQUE.
+        previous = next(
+            (r for r in existing_replicas if r.datanode_id == node_id), None
+        )
+        if previous is not None:
+            await self.repo.update_replica_status(
+                previous.replica_id, ReplicaStatus.ASSIGNED
+            )
+            await self.repo.append_event(
+                domain_id=settings.domain_id,
+                event_type=EventType.REPLICA_ASSIGNED,
+                entity_id=previous.replica_id,
+                payload={
+                    "replica_id": previous.replica_id,
+                    "block_id": block_id,
+                    "datanode_id": node_id,
+                    "reason": "rereplication",
+                },
+            )
+            await self.repo.session.commit()
+            previous.status = ReplicaStatus.ASSIGNED
+            return previous
         next_index = max((r.replica_index for r in existing_replicas), default=-1) + 1
         replica = Replica(
             replica_id=str(uuid.uuid4()),

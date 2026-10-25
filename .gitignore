@@ -38,6 +38,14 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Zips de intercambio entre miembros del equipo y carpetas de extraccion.
+*.zip
+proyectoDFSha/
+
+# Artefactos de descargas de pruebas del cliente.
+bajado*.md
+desde_*.md
+
 # Coverage
 .coverage
 htmlcov/

@@ -73,9 +73,11 @@ class BlockStore:
 
         path = self._path(block_id)
         if path.exists():
+            # Idempotencia solo si la copia local esta SANA: se verifica el
+            # contenido completo (descifrado + sha256), no solo el header. Una
+            # copia corrupta con header intacto se sobreescribe.
             try:
-                existing = self._read_checksum(path)
-                if existing == checksum:
+                if hashlib.sha256(self.get(block_id)).hexdigest() == checksum:
                     return checksum
             except Exception:
                 pass  # archivo corrupto: lo sobreescribimos
